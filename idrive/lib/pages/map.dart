@@ -21,7 +21,7 @@ class _MapPageState extends State<MapPage> {
   final FlutterTts tts = FlutterTts();
   Completer<GoogleMapController> _controller = Completer();
   late BitmapDescriptor pinLocationIcon;
-  
+
   Set<Marker> _markers = {};
   List<String> cars = [
     "Nissan GTR",
@@ -39,7 +39,14 @@ class _MapPageState extends State<MapPage> {
     "Volkswagen Jetta",
     "Honda Vezel",
     "Toyota Hybrid",
-    "Range",
+    "Range Rover",
+    "Toyota Corella",
+    "Audi Q3",
+    "Audi Q5",
+    "Audi Q7",
+    "BMW 470",
+    "Nissan Leaf",
+    "Toyota Prius"
   ];
 
   CameraPosition initialLocation = CameraPosition(
@@ -87,8 +94,8 @@ class _MapPageState extends State<MapPage> {
         onMapCreated: (GoogleMapController controller) {
           _controller.complete(controller);
 
-          // set a timer to add a random car every 35 seconds
-          Timer.periodic(Duration(seconds: 35), (Timer t) {
+          // set a timer to add a random car every 30 seconds
+          Timer.periodic(Duration(seconds: 30), (Timer t) {
             addNewMarker();
 
             // if we have more than 10 markers (car pins), stop the timer
@@ -109,7 +116,7 @@ class _MapPageState extends State<MapPage> {
     double long = initialLocation.target.longitude;
 
     // convert radius from meters to degrees
-    double r = 500 / 111300;
+    double r = 750 / 111300;
 
     // generate two uniform values
     double u = rng.nextDouble();
@@ -132,7 +139,10 @@ class _MapPageState extends State<MapPage> {
   addNewMarker() {
     var rng = new Random();
     var carName = cars[rng.nextInt(cars.length)];
-    var speed = rng.nextInt(120) + 20;
+    var speed = rng.nextInt(2) == 0
+        ? 20 + (rng.nextInt(100 - 20))
+        : 100 + (rng.nextInt(140 - 100));
+    var location = generateRandomCoordinates();
 
     _markers.add(
       Marker(
@@ -140,16 +150,25 @@ class _MapPageState extends State<MapPage> {
           title: carName,
           snippet: "$speed kmph",
         ),
-        markerId: MarkerId(carName + "${rng.nextInt(100)}"),
-        position: generateRandomCoordinates(),
+        markerId: MarkerId("$carName $location - $speed"),
+        position: location,
         icon: pinLocationIcon,
       ),
     );
 
+    // set the car's speed in kmph
     if (speed >= 100) {
+      _controller.future.then((controller) {
+        controller.animateCamera(CameraUpdate.newCameraPosition((CameraPosition(
+          target: location,
+          zoom: 16,
+          bearing: 30,
+        ))));
+      });
+
       tts.speak("A vehicle nearby is at $speed kilometres per hour");
     }
-    
+
     return;
   }
 
