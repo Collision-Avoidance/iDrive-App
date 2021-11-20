@@ -1,8 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
-
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -23,36 +24,11 @@ class _MapPageState extends State<MapPage> {
   late BitmapDescriptor pinLocationIcon;
 
   Set<Marker> _markers = {};
-  List<String> cars = [
-    "Nissan GTR",
-    "Honda Civic",
-    "Bentley Azure",
-    "Volkswagen Beetle",
-    "Volkswagen Golf",
-    "Volkswagen Passat",
-    "Renault Megane",
-    "Mahindra Xylo",
-    "Peugeot 508",
-    "Peugeot 407",
-    "Peugeot 308",
-    "Peugeot RCZ",
-    "Volkswagen Jetta",
-    "Honda Vezel",
-    "Toyota Hybrid",
-    "Range Rover",
-    "Toyota Corella",
-    "Audi Q3",
-    "Audi Q5",
-    "Audi Q7",
-    "BMW 470",
-    "Nissan Leaf",
-    "Toyota Prius"
-  ];
 
   CameraPosition initialLocation = CameraPosition(
     zoom: 14,
     bearing: 30,
-    target: LatLng(6.7980117, 80.0396157),
+    target: LatLng(6.074242, 80.288705),
   );
 
   @override
@@ -95,12 +71,41 @@ class _MapPageState extends State<MapPage> {
           _controller.complete(controller);
 
           // set a timer to add a random car every 30 seconds
-          Timer.periodic(Duration(seconds: 30), (Timer t) {
-            addNewMarker();
+          Timer.periodic(Duration(seconds: 20), (Timer t) async {
+            var vehicles = await getVehiclesFromAPI();
+            for (int i = 0; i < vehicles.length; i++) {
+              //Draw the marker
+              addNewMarker(vehicles[i]['label'].toString(), vehicles[i]['lat'],
+                  vehicles[i]['lon'], vehicles[i]['speed']);
 
-            // if we have more than 10 markers (car pins), stop the timer
-            if (_markers.length > 10) {
-              t.cancel();
+              //Check High Speed
+              if (vehicles[i]['speed'] > 100) {
+                highSpeedMovement(vehicles[i]['lat'], vehicles[i]['lon'],
+                    vehicles[i]['speed']);
+              }
+
+              //Set Acceleration
+              var _prevVelocity = vehicles[i]['prevVelocity'];
+              var _currentVelocity = vehicles[i]['speed'];
+              var _velocityDiff = _currentVelocity - _prevVelocity;
+              var _acceleration = _velocityDiff / 5;
+
+              if ((vehicles[i]['prevAcc'] - _acceleration) > 0 &&
+                  (vehicles[i]['prevAcc'] - _acceleration) > 10) {
+                vehicles[i]['isAccWarning'] = true;
+              } else {
+                vehicles[i]['isAccWarning'] = false;
+              }
+
+              print(vehicles[i].toString());
+              // vehiclesList.add(vehicles[i]);
+
+              //Acceleration Warning
+              if (vehicles[0]['isAccWarning']) speakHighAcceleration();
+
+              //Reset the prev velocity and acceleration
+              vehicles[i]['prevVelocity'] = vehicles[i]['speed'];
+              vehicles[i]['prevAcc'] = _acceleration;
             }
 
             setState(() {});
@@ -110,66 +115,41 @@ class _MapPageState extends State<MapPage> {
     );
   }
 
-  LatLng generateRandomCoordinates() {
-    var rng = new Random();
-    double lat = initialLocation.target.latitude;
-    double long = initialLocation.target.longitude;
-
-    // convert radius from meters to degrees
-    double r = 750 / 111300;
-
-    // generate two uniform values
-    double u = rng.nextDouble();
-    double v = rng.nextDouble();
-
-    // https://gis.stackexchange.com/questions/25877/generating-random-locations-nearby
-    double w = r * sqrt(u);
-    double t = 2 * pi * v;
-    double x = w * cos(t);
-    double y = w * sin(t);
-
-    x = x / cos(radians(long));
-
-    rng.nextInt(2) == 0 ? lat += x : lat -= y;
-    rng.nextInt(2) == 0 ? long += x : long -= y;
-
-    return LatLng(lat, long);
-  }
-
-  addNewMarker() {
-    var rng = new Random();
-    var carName = cars[rng.nextInt(cars.length)];
-    var speed = rng.nextInt(2) == 0
-        ? 20 + (rng.nextInt(100 - 20))
-        : 100 + (rng.nextInt(140 - 100));
-    var location = generateRandomCoordinates();
-
+  addNewMarker(
+      String carName, double locationLat, double locationLon, int speed) {
     _markers.add(
       Marker(
         infoWindow: InfoWindow(
           title: carName,
           snippet: "$speed kmph",
         ),
-        markerId: MarkerId("$carName $location - $speed"),
-        position: location,
+        markerId:
+            MarkerId("$carName $LatLng(locationLat, locationLon) - $speed"),
+        position: LatLng(locationLat, locationLon),
         icon: pinLocationIcon,
       ),
     );
-
-    // set the car's speed in kmph
-    if (speed >= 100) {
-      _controller.future.then((controller) {
-        controller.animateCamera(CameraUpdate.newCameraPosition((CameraPosition(
-          target: location,
-          zoom: 16,
-          bearing: 30,
-        ))));
-      });
-
-      tts.speak("A vehicle nearby is at $speed kilometres per hour");
-    }
-
     return;
+  }
+
+  highSpeedMovement(double locationLat, double locationLon, int speed) {
+    // High Speed Car camera movement
+    _controller.future.then((controller) {
+      controller.animateCamera(CameraUpdate.newCameraPosition((CameraPosition(
+        target: LatLng(locationLat, locationLon),
+        zoom: 16,
+        bearing: 30,
+      ))));
+    });
+    speakHighSpeed(speed.toString());
+  }
+
+  speakHighSpeed(String speed) {
+    tts.speak("A vehicle nearby is at $speed kilometres per hour");
+  }
+
+  speakHighAcceleration() {
+    tts.speak("A vehicle nearby is gaining sudden acceleration!");
   }
 
   Future<Uint8List> getBytesFromAsset(String path, int width) async {
@@ -180,5 +160,16 @@ class _MapPageState extends State<MapPage> {
     return (await fi.image.toByteData(format: ui.ImageByteFormat.png))!
         .buffer
         .asUint8List();
+  }
+
+  Future getVehiclesFromAPI() async {
+    try {
+      var response = await Dio().get(
+          'https://idrive-b6298-default-rtdb.firebaseio.com/vehicles.json');
+      // print(response.data);
+      return response.data;
+    } catch (e) {
+      print(e);
+    }
   }
 }
