@@ -40,6 +40,7 @@ dependencies:
   vector_math: any
   flutter_tts: ^3.2.1
   dio: ^4.0.0
+  loader_overlay: ^2.0.4
 
 dev_dependencies:
   flutter_test:
