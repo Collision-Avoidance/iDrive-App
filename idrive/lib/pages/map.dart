@@ -1,12 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
-
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:loader_overlay/loader_overlay.dart';
 import 'package:vector_math/vector_math.dart';
 
 class MapPage extends StatefulWidget {
@@ -19,40 +21,22 @@ class MapPage extends StatefulWidget {
 
 class _MapPageState extends State<MapPage> {
   final FlutterTts tts = FlutterTts();
+  List vehicleStateList = [];
   Completer<GoogleMapController> _controller = Completer();
   late BitmapDescriptor pinLocationIcon;
 
   Set<Marker> _markers = {};
-  List<String> cars = [
-    "Nissan GTR",
-    "Honda Civic",
-    "Bentley Azure",
-    "Volkswagen Beetle",
-    "Volkswagen Golf",
-    "Volkswagen Passat",
-    "Renault Megane",
-    "Mahindra Xylo",
-    "Peugeot 508",
-    "Peugeot 407",
-    "Peugeot 308",
-    "Peugeot RCZ",
-    "Volkswagen Jetta",
-    "Honda Vezel",
-    "Toyota Hybrid",
-    "Range Rover",
-    "Toyota Corella",
-    "Audi Q3",
-    "Audi Q5",
-    "Audi Q7",
-    "BMW 470",
-    "Nissan Leaf",
-    "Toyota Prius"
-  ];
+
+  //Loader
+  bool _isLoading = true;
+
+  //TImer
+  late Timer _timer;
 
   CameraPosition initialLocation = CameraPosition(
     zoom: 14,
     bearing: 30,
-    target: LatLng(6.7980117, 80.0396157),
+    target: LatLng(6.074242, 80.288705),
   );
 
   @override
@@ -68,6 +52,15 @@ class _MapPageState extends State<MapPage> {
     tts.setSpeechRate(0.4);
 
     super.initState();
+    // context.loaderOverlay.show();
+  }
+
+  //Dispose Timer and TTS on page close
+  @override
+  void dispose() async {
+    super.dispose();
+    await tts.stop();
+    _timer.cancel();
   }
 
   @override
@@ -87,89 +80,132 @@ class _MapPageState extends State<MapPage> {
         ),
         elevation: 0,
       ),
-      body: GoogleMap(
-        mapType: MapType.normal,
-        initialCameraPosition: initialLocation,
-        markers: _markers,
-        onMapCreated: (GoogleMapController controller) {
-          _controller.complete(controller);
+      body: LoaderOverlay(
+        child: GoogleMap(
+          mapType: MapType.normal,
+          initialCameraPosition: initialLocation,
+          markers: _markers,
+          onMapCreated: (GoogleMapController controller) {
+            _controller.complete(controller);
 
-          // set a timer to add a random car every 30 seconds
-          Timer.periodic(Duration(seconds: 30), (Timer t) {
-            addNewMarker();
+            //Set a loader for the first execution
+            if (_isLoading == true) context.loaderOverlay.show();
 
-            // if we have more than 10 markers (car pins), stop the timer
-            if (_markers.length > 10) {
-              t.cancel();
-            }
+            // set a timer to add a random car every 30 seconds
+            _timer = Timer.periodic(Duration(seconds: 20), (Timer t) async {
+              int _vIndex = 0;
+              bool _isHighAcc;
 
-            setState(() {});
-          });
-        },
+              //Read Vehicle data from the API
+              var vehicles = await getVehiclesFromAPI();
+
+              //Set the initial state for Vehicles
+              if (vehicleStateList.length == 0) {
+                setState(() {
+                  vehicleStateList = vehicles;
+                });
+              }
+
+              for (int i = 0; i < vehicles.length; i++) {
+                //Reset the acceleraton state
+                _isHighAcc = false;
+
+                //Get the state for this vehicle
+                for (int j = 0; j < vehicleStateList.length; j++) {
+                  if (vehicleStateList[j]['id'] == vehicles[i]['id']) {
+                    _vIndex = j;
+                  }
+                }
+
+                //Draw the marker
+                addNewMarker(
+                    vehicles[i]['label'].toString(),
+                    vehicles[i]['lat'],
+                    vehicles[i]['lon'],
+                    vehicles[i]['speed']);
+
+                //Hide the loader
+                //Hide it after rendering markers
+                if (_isLoading == true) {
+                  _isLoading = false;
+                  context.loaderOverlay.hide();
+                }
+
+                //Set Acceleration
+                //Giving the priority to the acceleration
+                var _prevVelocity = vehicleStateList[_vIndex]['speed'];
+                var _currentVelocity = vehicles[i]['speed'];
+                var _velocityDiff = _currentVelocity - _prevVelocity;
+                var _acceleration =
+                    _velocityDiff / (20 / 3600); //Seconds to hours
+                if ((_acceleration - vehicleStateList[_vIndex]['prevAcc']) >
+                        0 &&
+                    (_acceleration - vehicleStateList[_vIndex]['prevAcc']) >
+                        5) {
+                  _isHighAcc = true;
+                } else {
+                  _isHighAcc = false;
+                }
+
+                //Acceleration Warning
+                if (_isHighAcc == true) speakHighAcceleration();
+
+                //Check High Speed
+                if (vehicles[i]['speed'] > 100 && _isHighAcc != true) {
+                  highSpeedMovement(vehicles[i]['lat'], vehicles[i]['lon'],
+                      vehicles[i]['speed']);
+                }
+
+                print(vehicles[i].toString()); //DEBUG
+
+                //Reset the prev velocity and acceleration
+                vehicleStateList[_vIndex]['speed'] = vehicles[i]['speed'];
+                vehicleStateList[_vIndex]['prevAcc'] = _acceleration;
+              }
+
+              setState(() {});
+            });
+          },
+        ),
       ),
     );
   }
 
-  LatLng generateRandomCoordinates() {
-    var rng = new Random();
-    double lat = initialLocation.target.latitude;
-    double long = initialLocation.target.longitude;
-
-    // convert radius from meters to degrees
-    double r = 750 / 111300;
-
-    // generate two uniform values
-    double u = rng.nextDouble();
-    double v = rng.nextDouble();
-
-    // https://gis.stackexchange.com/questions/25877/generating-random-locations-nearby
-    double w = r * sqrt(u);
-    double t = 2 * pi * v;
-    double x = w * cos(t);
-    double y = w * sin(t);
-
-    x = x / cos(radians(long));
-
-    rng.nextInt(2) == 0 ? lat += x : lat -= y;
-    rng.nextInt(2) == 0 ? long += x : long -= y;
-
-    return LatLng(lat, long);
-  }
-
-  addNewMarker() {
-    var rng = new Random();
-    var carName = cars[rng.nextInt(cars.length)];
-    var speed = rng.nextInt(2) == 0
-        ? 20 + (rng.nextInt(100 - 20))
-        : 100 + (rng.nextInt(140 - 100));
-    var location = generateRandomCoordinates();
-
+  addNewMarker(
+      String carName, double locationLat, double locationLon, int speed) {
     _markers.add(
       Marker(
         infoWindow: InfoWindow(
           title: carName,
           snippet: "$speed kmph",
         ),
-        markerId: MarkerId("$carName $location - $speed"),
-        position: location,
+        markerId:
+            MarkerId("$carName $LatLng(locationLat, locationLon) - $speed"),
+        position: LatLng(locationLat, locationLon),
         icon: pinLocationIcon,
       ),
     );
-
-    // set the car's speed in kmph
-    if (speed >= 100) {
-      _controller.future.then((controller) {
-        controller.animateCamera(CameraUpdate.newCameraPosition((CameraPosition(
-          target: location,
-          zoom: 16,
-          bearing: 30,
-        ))));
-      });
-
-      tts.speak("A vehicle nearby is at $speed kilometres per hour");
-    }
-
     return;
+  }
+
+  highSpeedMovement(double locationLat, double locationLon, int speed) {
+    // High Speed Car camera movement
+    _controller.future.then((controller) {
+      controller.animateCamera(CameraUpdate.newCameraPosition((CameraPosition(
+        target: LatLng(locationLat, locationLon),
+        zoom: 16,
+        bearing: 30,
+      ))));
+    });
+    speakHighSpeed(speed.toString());
+  }
+
+  speakHighSpeed(String speed) {
+    tts.speak("A vehicle nearby is at $speed kilometres per hour");
+  }
+
+  speakHighAcceleration() {
+    tts.speak("A vehicle nearby is gaining sudden acceleration!");
   }
 
   Future<Uint8List> getBytesFromAsset(String path, int width) async {
@@ -180,5 +216,15 @@ class _MapPageState extends State<MapPage> {
     return (await fi.image.toByteData(format: ui.ImageByteFormat.png))!
         .buffer
         .asUint8List();
+  }
+
+  Future getVehiclesFromAPI() async {
+    try {
+      var response = await Dio().get(
+          'https://idrive-b6298-default-rtdb.firebaseio.com/vehicles.json');
+      return response.data;
+    } catch (e) {
+      print(e);
+    }
   }
 }
