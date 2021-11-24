@@ -27,14 +27,14 @@ class _ConnectOBDSplashPageState extends State<ConnectOBDSplashPage> {
               alignment: Alignment.centerLeft,
               child: Text.rich(
                 TextSpan(
-                  text: "Connect to your ",
+                  text: "Select ",
                   style: Theme.of(context).textTheme.headline5!.copyWith(
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                       ),
                   children: <InlineSpan>[
                     TextSpan(
-                      text: "OBD",
+                      text: "Manufacturer",
                       style: Theme.of(context).textTheme.headline5!.copyWith(
                             fontWeight: FontWeight.bold,
                             color: Colors.blue,

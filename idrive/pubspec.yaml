@@ -66,3 +66,5 @@ flutter:
     - assets/images/phone.png
     - assets/images/car.png
     - assets/images/car_pin.png
+    - assets/images/speed.png
+    - assets/images/obd.png

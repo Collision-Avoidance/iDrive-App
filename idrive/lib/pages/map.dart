@@ -21,6 +21,7 @@ class MapPage extends StatefulWidget {
 
 class _MapPageState extends State<MapPage> {
   final FlutterTts tts = FlutterTts();
+  //state of the vehicles
   List vehicleStateList = [];
   Completer<GoogleMapController> _controller = Completer();
   late BitmapDescriptor pinLocationIcon;
@@ -162,7 +163,7 @@ class _MapPageState extends State<MapPage> {
                 vehicleStateList[_vIndex]['speed'] = vehicles[i]['speed'];
                 vehicleStateList[_vIndex]['prevAcc'] = _acceleration;
               }
-
+              //refresh
               setState(() {});
             });
           },
