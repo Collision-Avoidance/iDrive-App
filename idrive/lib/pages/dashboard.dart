@@ -4,6 +4,7 @@ import 'package:idrive/shared/logo.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:sizer/sizer.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:external_app_launcher/external_app_launcher.dart';
 
 class DashboardPage extends StatefulWidget {
   static const path = "/dashboard";
@@ -108,11 +109,28 @@ class _DashboardPageState extends State<DashboardPage> {
                 child: Container(
                   alignment: Alignment.center,
                   color: Colors.grey,
+                  child: Container(
+            height: 50,
+            width: 150,
+            child: RaisedButton(
+                color: Colors.blue,
+                onPressed: () async {
+                  await LaunchApp.openApp(
+                    androidPackageName: 'com.idrive.obdreader',
+                    // openStore: false
+                  );
+                  // Enter thr package name of the App you  want to open and for iOS add the     URLscheme to the Info.plist file.
+                  // The second arguments decide wether the     app redirects PlayStore or AppStore.
+                  // For testing purpose you can enter com. instagram.android
+                },
+                child: Container(
+                    child: Center(
                   child: Text(
-                    "Connect to OBD",
-                    style: Theme.of(context).textTheme.headline6!.copyWith(
-                        color: Colors.black, fontWeight: FontWeight.bold),
+                    "Open",
+                    textAlign: TextAlign.center,
                   ),
+                ))),
+          ),
                 ),
               )
             ],
